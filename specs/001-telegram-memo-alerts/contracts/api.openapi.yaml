@@ -1,0 +1,869 @@
+openapi: 3.0.3
+info:
+  title: Telegram Memo Alert System API
+  description: RESTful API for memo management with scheduled Telegram notifications
+  version: 1.0.0
+  contact:
+    name: Support
+  license:
+    name: MIT
+
+servers:
+  - url: https://memo-backend-production.onrender.com/api/v1
+    description: Production server (Render.com)
+  - url: http://localhost:8000/api/v1
+    description: Development server
+
+tags:
+  - name: Authentication
+    description: User account and authentication endpoints
+  - name: Memos
+    description: Memo CRUD operations
+  - name: Alarms
+    description: Alarm scheduling and management
+  - name: History
+    description: Alarm history and delivery status
+  - name: Telegram
+    description: Telegram linking and webhook
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from login endpoint
+
+  schemas:
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          enum:
+            - INVALID_REQUEST
+            - UNAUTHORIZED
+            - FORBIDDEN
+            - NOT_FOUND
+            - CONFLICT
+            - INTERNAL_SERVER_ERROR
+        message:
+          type: string
+        details:
+          type: object
+
+    User:
+      type: object
+      required:
+        - id
+        - email
+        - timezone
+        - telegram_linked
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        timezone:
+          type: string
+          description: IANA timezone identifier (e.g., Asia/Seoul)
+        telegram_linked:
+          type: boolean
+          description: Whether Telegram is linked to this account
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Memo:
+      type: object
+      required:
+        - id
+        - title
+        - user_id
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 2000
+          nullable: true
+        next_alarm_time:
+          type: string
+          format: date-time
+          description: Next scheduled alarm time (user's local timezone)
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateMemoRequest:
+      type: object
+      required:
+        - title
+      properties:
+        title:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 2000
+          nullable: true
+
+    UpdateMemoRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 2000
+          nullable: true
+
+    Alarm:
+      type: object
+      required:
+        - id
+        - memo_id
+        - scheduled_time
+        - recurrence_type
+      properties:
+        id:
+          type: string
+          format: uuid
+        memo_id:
+          type: string
+          format: uuid
+        scheduled_time:
+          type: string
+          pattern: '^([0-1][0-9]|2[0-3]):[0-5][0-9]$'
+          description: HH:MM format (24-hour)
+        recurrence_type:
+          type: string
+          enum:
+            - daily
+            - weekly
+            - monthly
+            - custom
+        recurrence_days:
+          type: array
+          items:
+            type: integer
+          description: |
+            Days for recurrence:
+            - weekly: [0-6] (0=Sunday, 6=Saturday)
+            - monthly: [1-31] (day of month)
+            - custom: [0-6] (selected days)
+            - daily: empty or omitted
+          nullable: true
+        next_trigger_time:
+          type: string
+          format: date-time
+          description: Next scheduled trigger time (ISO 8601 in user's timezone)
+        enabled:
+          type: boolean
+          default: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateAlarmRequest:
+      type: object
+      required:
+        - memo_id
+        - scheduled_time
+        - recurrence_type
+      properties:
+        memo_id:
+          type: string
+          format: uuid
+        scheduled_time:
+          type: string
+          pattern: '^([0-1][0-9]|2[0-3]):[0-5][0-9]$'
+          description: HH:MM format (24-hour)
+        recurrence_type:
+          type: string
+          enum:
+            - daily
+            - weekly
+            - monthly
+            - custom
+        recurrence_days:
+          type: array
+          items:
+            type: integer
+          nullable: true
+          description: Required for weekly, monthly, custom types
+
+    UpdateAlarmRequest:
+      type: object
+      properties:
+        scheduled_time:
+          type: string
+          pattern: '^([0-1][0-9]|2[0-3]):[0-5][0-9]$'
+        recurrence_type:
+          type: string
+          enum:
+            - daily
+            - weekly
+            - monthly
+            - custom
+        recurrence_days:
+          type: array
+          items:
+            type: integer
+          nullable: true
+        enabled:
+          type: boolean
+
+    AlarmHistory:
+      type: object
+      required:
+        - id
+        - alarm_id
+        - triggered_at
+        - delivery_status
+      properties:
+        id:
+          type: string
+          format: uuid
+        alarm_id:
+          type: string
+          format: uuid
+        triggered_at:
+          type: string
+          format: date-time
+        delivery_status:
+          type: string
+          enum:
+            - sent
+            - failed
+            - pending
+        error_message:
+          type: string
+          nullable: true
+        retry_count:
+          type: integer
+          minimum: 0
+        created_at:
+          type: string
+          format: date-time
+
+    TelegramLinkingCode:
+      type: object
+      required:
+        - code
+        - expires_at
+      properties:
+        code:
+          type: string
+          description: Code to send to Telegram bot
+        expires_at:
+          type: string
+          format: date-time
+          description: When code expires (10 minutes from creation)
+
+security:
+  - BearerAuth: []
+
+paths:
+  /auth/register:
+    post:
+      summary: Register new user
+      operationId: registerUser
+      tags:
+        - Authentication
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 8
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+                  token:
+                    type: string
+                    description: JWT access token
+        '409':
+          description: Email already registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/login:
+    post:
+      summary: Login user
+      operationId: loginUser
+      tags:
+        - Authentication
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+                  token:
+                    type: string
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/me:
+    get:
+      summary: Get current user profile
+      operationId: getCurrentUser
+      tags:
+        - Authentication
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/update-timezone:
+    post:
+      summary: Update user timezone
+      operationId: updateUserTimezone
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - timezone
+              properties:
+                timezone:
+                  type: string
+                  description: IANA timezone identifier
+      responses:
+        '200':
+          description: Timezone updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: Invalid timezone
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /memos:
+    get:
+      summary: List all user memos
+      operationId: listMemos
+      tags:
+        - Memos
+      parameters:
+        - name: skip
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+      responses:
+        '200':
+          description: List of memos
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Memo'
+                  total:
+                    type: integer
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      summary: Create new memo
+      operationId: createMemo
+      tags:
+        - Memos
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMemoRequest'
+      responses:
+        '201':
+          description: Memo created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Memo'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /memos/{memo_id}:
+    get:
+      summary: Get memo details
+      operationId: getMemo
+      tags:
+        - Memos
+      parameters:
+        - name: memo_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Memo details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  memo:
+                    $ref: '#/components/schemas/Memo'
+                  alarms:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Alarm'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Not memo owner
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Memo not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    patch:
+      summary: Update memo
+      operationId: updateMemo
+      tags:
+        - Memos
+      parameters:
+        - name: memo_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMemoRequest'
+      responses:
+        '200':
+          description: Memo updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Memo'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Not memo owner
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Memo not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      summary: Delete memo and all associated alarms
+      operationId: deleteMemo
+      tags:
+        - Memos
+      parameters:
+        - name: memo_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Memo deleted
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Not memo owner
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Memo not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /alarms:
+    post:
+      summary: Create alarm for memo
+      operationId: createAlarm
+      tags:
+        - Alarms
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAlarmRequest'
+      responses:
+        '201':
+          description: Alarm created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Alarm'
+        '400':
+          description: Invalid request (invalid time, recurrence_days mismatch)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Not memo owner
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Memo not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /alarms/{alarm_id}:
+    patch:
+      summary: Update alarm
+      operationId: updateAlarm
+      tags:
+        - Alarms
+      parameters:
+        - name: alarm_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAlarmRequest'
+      responses:
+        '200':
+          description: Alarm updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Alarm'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Not alarm owner
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Alarm not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      summary: Delete alarm
+      operationId: deleteAlarm
+      tags:
+        - Alarms
+      parameters:
+        - name: alarm_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Alarm deleted
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Not alarm owner
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Alarm not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /history/{alarm_id}:
+    get:
+      summary: Get alarm history (delivery status and triggers)
+      operationId: getAlarmHistory
+      tags:
+        - History
+      parameters:
+        - name: alarm_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: skip
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        '200':
+          description: Alarm history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AlarmHistory'
+                  total:
+                    type: integer
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Not alarm owner
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Alarm not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /telegram/linking-code:
+    post:
+      summary: Generate Telegram linking code
+      operationId: generateTelegramLinkingCode
+      tags:
+        - Telegram
+      responses:
+        '200':
+          description: Linking code generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelegramLinkingCode'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /telegram/unlink:
+    post:
+      summary: Unlink Telegram account
+      operationId: unlinkTelegram
+      tags:
+        - Telegram
+      responses:
+        '200':
+          description: Telegram unlinked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /webhook/telegram:
+    post:
+      summary: Telegram Bot webhook (internal use)
+      operationId: handleTelegramWebhook
+      tags:
+        - Telegram
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Telegram Update object
+      responses:
+        '200':
+          description: Webhook processed
