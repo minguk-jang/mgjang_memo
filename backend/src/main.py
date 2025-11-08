@@ -79,13 +79,14 @@ async def health_check():
     return {"status": "ok"}
 
 
-# API routes will be imported in Phase 3
-# from .api import auth, memos, alarms, history, telegram
-# app.include_router(auth.router)
-# app.include_router(memos.router)
-# app.include_router(alarms.router)
-# app.include_router(history.router)
-# app.include_router(telegram.router)
+# API routes
+from .api import auth, memos, alarms, history, telegram
+
+app.include_router(auth.router)
+app.include_router(memos.router)
+app.include_router(alarms.router)
+app.include_router(history.router)
+app.include_router(telegram.router)
 
 
 if __name__ == "__main__":
