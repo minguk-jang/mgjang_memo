@@ -33,6 +33,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return localStorage.getItem('access_token');
   });
 
+  const [isGitHubInitialized, setIsGitHubInitialized] = useState(false);
+
   const login = useCallback((newToken: string, newUser: User) => {
     setToken(newToken);
     setUser(newUser);
@@ -46,6 +48,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         config.githubMemoRepo.owner || newUser.github_login || '',
         config.githubMemoRepo.repo
       );
+      setIsGitHubInitialized(true);
     }
   }, []);
 
@@ -54,6 +57,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setUser(null);
     localStorage.removeItem('access_token');
     localStorage.removeItem('user');
+    setIsGitHubInitialized(false);
   }, []);
 
   const updateUser = useCallback((updatedUser: User) => {
@@ -67,19 +71,22 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         config.githubMemoRepo.owner || updatedUser.github_login || '',
         config.githubMemoRepo.repo
       );
+      setIsGitHubInitialized(true);
     }
   }, []);
 
   // Initialize GitHub service on mount if user is already logged in
   useEffect(() => {
-    if (user?.github_token) {
+    if (user?.github_token && !isGitHubInitialized) {
+      console.log('Initializing GitHub service on mount');
       githubMemoService.initialize(
         user.github_token,
         config.githubMemoRepo.owner || user.github_login || '',
         config.githubMemoRepo.repo
       );
+      setIsGitHubInitialized(true);
     }
-  }, [user]);
+  }, []); // Only run once on mount
 
   return (
     <AuthContext.Provider value={{ user, token, setToken, setUser, login, logout, updateUser }}>
