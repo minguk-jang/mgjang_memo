@@ -1,10 +1,8 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import Dashboard from "./pages/Dashboard";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
-import GitHubLogin from "./components/GitHubLogin";
-import { GITHUB_OAUTH_STATE_KEY } from "./constants/auth";
-import { exchangeGitHubCode } from "./services/auth";
+import GitHubTokenLogin from "./components/GitHubTokenLogin";
 
 const LoadingScreen = () => (
   <div
@@ -29,77 +27,28 @@ const LoadingScreen = () => (
 
 const AppContent = () => {
   const { user, token, login } = useAuth();
-  const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
-  const hasHandledCodeRef = useRef(false);
 
-  useEffect(() => {
-    const initialize = async () => {
-      if (token && user) {
-        setAuthError(null);
-        setLoading(false);
-        return;
-      }
-
-      const url = new URL(window.location.href);
-      const code = url.searchParams.get("code");
-      const state = url.searchParams.get("state");
-
-      if (!code) {
-        setLoading(false);
-        return;
-      }
-
-      const storedState = sessionStorage.getItem(GITHUB_OAUTH_STATE_KEY);
-      if (!state || !storedState || state !== storedState) {
-        setAuthError("Invalid GitHub login state. Please try again.");
-        sessionStorage.removeItem(GITHUB_OAUTH_STATE_KEY);
-        removeOAuthParams(url);
-        setLoading(false);
-        return;
-      }
-
-      if (hasHandledCodeRef.current) {
-        return;
-      }
-      hasHandledCodeRef.current = true;
-
-      try {
-        const authResult = await exchangeGitHubCode(code);
-        login(authResult.access_token, authResult.user);
-        setAuthError(null);
-      } catch (error) {
-        console.error("GitHub authentication failed", error);
-        setAuthError("GitHub authentication failed. Please try again.");
-      } finally {
-        sessionStorage.removeItem(GITHUB_OAUTH_STATE_KEY);
-        removeOAuthParams(url);
-        setLoading(false);
-      }
+  const handleLoginSuccess = (githubToken: string, username: string, email: string) => {
+    // Create a user object compatible with the existing AuthContext
+    const newUser = {
+      id: Date.now(), // Use timestamp as ID
+      email,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+      github_login: username,
+      github_token: githubToken,
     };
 
-    initialize();
-  }, [token, user, login]);
-
-  if (loading) {
-    return <LoadingScreen />;
-  }
+    // Use github token as the app token
+    login(githubToken, newUser);
+    setAuthError(null);
+  };
 
   if (!token || !user) {
-    return <GitHubLogin error={authError} />;
+    return <GitHubTokenLogin onSuccess={handleLoginSuccess} error={authError} />;
   }
 
   return <Dashboard />;
-};
-
-const removeOAuthParams = (url: URL) => {
-  url.searchParams.delete("code");
-  url.searchParams.delete("state");
-  const updatedSearch = url.searchParams.toString();
-  const newUrl = `${url.pathname}${
-    updatedSearch ? `?${updatedSearch}` : ""
-  }${url.hash}`;
-  window.history.replaceState({}, document.title, newUrl);
 };
 
 function App() {

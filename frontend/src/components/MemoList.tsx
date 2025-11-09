@@ -1,66 +1,39 @@
 /**
- * MemoList component - with alarm toggle and enhanced UX
+ * MemoList component - Using GitHub Issues as storage
  */
 
 import React, { useEffect, useState } from "react";
-import apiClient from "../services/api";
-import { getTimeDisplay } from "../utils/timezone";
-
-interface Alarm {
-  id: number;
-  enabled: boolean;
-  alarm_type?: string;
-  channel?: string;
-}
-
-interface Memo {
-  id: string;
-  title: string;
-  description: string | null;
-  next_alarm_time: string | null;
-  created_at: string;
-  alarms?: Alarm[];
-}
+import { githubMemoService, GitHubMemo } from "../services/github";
 
 interface MemoListProps {
   refreshTrigger?: number;
-  userTimezone: string;
   onDelete?: () => void;
-  onMemosLoaded?: (memos: Memo[]) => void;
+  onMemosLoaded?: (memos: GitHubMemo[]) => void;
 }
 
 const MemoList: React.FC<MemoListProps> = ({
   refreshTrigger,
-  userTimezone,
   onDelete,
   onMemosLoaded,
 }) => {
-  const [memos, setMemos] = useState<Memo[]>([]);
+  const [memos, setMemos] = useState<GitHubMemo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [total, setTotal] = useState(0);
-  const [togglingAlarm, setTogglingAlarm] = useState<number | null>(null);
 
   const fetchMemos = async () => {
     setLoading(true);
     setError("");
 
     try {
-      const response = await apiClient.get("/memos?skip=0&limit=50");
-      const data = response.data;
-      const memoItems = Array.isArray(data) ? data : data?.items || [];
-      const totalCount = Array.isArray(data)
-        ? data.length
-        : data?.total ?? memoItems.length;
-
-      setMemos(memoItems);
-      setTotal(totalCount);
+      const memoList = await githubMemoService.listMemos('open');
+      setMemos(memoList);
 
       if (onMemosLoaded) {
-        onMemosLoaded(memoItems);
+        onMemosLoaded(memoList);
       }
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Failed to fetch memos");
+      console.error("Failed to fetch memos:", err);
+      setError(err.message || "Failed to fetch memos");
     } finally {
       setLoading(false);
     }
@@ -70,50 +43,39 @@ const MemoList: React.FC<MemoListProps> = ({
     fetchMemos();
   }, [refreshTrigger]);
 
-  const handleDelete = async (memoId: string) => {
-    if (!window.confirm("Are you sure you want to delete this memo?")) {
+  const handleDelete = async (issueNumber: number, title: string) => {
+    if (!window.confirm(`Are you sure you want to delete "${title}"?`)) {
       return;
     }
 
     try {
-      await apiClient.delete(`/memos/${memoId}`);
+      await githubMemoService.deleteMemo(issueNumber);
       fetchMemos();
 
       if (onDelete) {
         onDelete();
       }
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Failed to delete memo");
+      alert(err.message || "Failed to delete memo");
     }
   };
 
-  const handleToggleAlarm = async (alarmId: number, currentEnabled: boolean) => {
-    setTogglingAlarm(alarmId);
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInMs = now.getTime() - date.getTime();
+    const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
+    const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
 
-    try {
-      await apiClient.patch(`/alarms/${alarmId}`, {
-        enabled: !currentEnabled,
-      });
-      // Refresh memo list to show updated alarm status
-      fetchMemos();
-    } catch (err: any) {
-      alert(err.response?.data?.detail || "Failed to toggle alarm");
-    } finally {
-      setTogglingAlarm(null);
-    }
-  };
-
-  const getAlarmStatusIcon = (alarm?: Alarm) => {
-    if (!alarm) return null;
-    if (!alarm.enabled) return '🔕';
-
-    switch (alarm.channel) {
-      case 'telegram':
-        return '💬';
-      case 'email':
-        return '📧';
-      default:
-        return '🔔';
+    if (diffInHours < 1) {
+      const diffInMinutes = Math.floor(diffInMs / (1000 * 60));
+      return `${diffInMinutes}m ago`;
+    } else if (diffInHours < 24) {
+      return `${diffInHours}h ago`;
+    } else if (diffInDays < 7) {
+      return `${diffInDays}d ago`;
+    } else {
+      return date.toLocaleDateString();
     }
   };
 
@@ -133,9 +95,23 @@ const MemoList: React.FC<MemoListProps> = ({
 
   return (
     <div className="glass-card rounded-2xl p-6">
-      <h2 className="text-lg font-semibold mb-6" style={{ color: 'var(--text)' }}>
-        Your Memos ({total})
-      </h2>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-lg font-semibold" style={{ color: 'var(--text)' }}>
+          Your Memos ({memos.length})
+        </h2>
+        <a
+          href={memos.length > 0 ? memos[0].url.replace(/\/\d+$/, '') : '#'}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs px-3 py-1.5 rounded-lg transition-all duration-200 hover:opacity-80"
+          style={{
+            background: 'var(--card-hover)',
+            color: 'var(--primary)',
+          }}
+        >
+          View on GitHub →
+        </a>
+      </div>
 
       {error && (
         <div className="px-4 py-3 rounded-xl mb-4" style={{ background: '#FEE2E2', color: '#991B1B', border: '1px solid #FCA5A5' }}>
@@ -145,106 +121,102 @@ const MemoList: React.FC<MemoListProps> = ({
 
       {memos.length === 0 ? (
         <div className="text-center py-16" style={{ color: 'var(--muted)' }}>
-          <p className="text-base">No memos yet. Create one!</p>
+          <p className="text-base mb-2">No memos yet. Create one!</p>
+          <p className="text-sm">Memos are stored as GitHub Issues</p>
         </div>
       ) : (
         <div className="space-y-3 max-h-[calc(100vh-280px)] overflow-y-auto custom-scrollbar pr-2">
-          {memos.map((memo) => {
-            const alarm = memo.alarms && memo.alarms.length > 0 ? memo.alarms[0] : undefined;
-
-            return (
-              <div
-                key={memo.id}
-                className="p-4 rounded-xl transition-all duration-200 hover:scale-[1.01]"
-                style={{
-                  background: 'var(--card)',
-                  border: '1px solid var(--ring)',
-                  opacity: alarm && !alarm.enabled ? 0.6 : 1,
-                }}
-              >
-                {/* Title & Controls */}
-                <div className="flex items-start justify-between gap-3 mb-2">
+          {memos.map((memo) => (
+            <div
+              key={memo.id}
+              className="p-4 rounded-xl transition-all duration-200 hover:scale-[1.01]"
+              style={{
+                background: 'var(--card)',
+                border: '1px solid var(--ring)',
+              }}
+            >
+              {/* Header: Title & Actions */}
+              <div className="flex items-start justify-between gap-3 mb-2">
+                <div className="flex-1 min-w-0">
                   <h3
-                    className="text-base font-semibold truncate flex-1"
+                    className="text-base font-semibold truncate"
                     style={{ color: 'var(--text)' }}
                     title={memo.title}
                   >
                     {memo.title}
                   </h3>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {/* Alarm Toggle */}
-                    {alarm && (
-                      <button
-                        onClick={() => handleToggleAlarm(alarm.id, alarm.enabled)}
-                        disabled={togglingAlarm === alarm.id}
-                        className="p-1.5 rounded-lg transition-all duration-200 hover:opacity-70 focus:outline-none focus:ring-2 focus:ring-offset-1 disabled:opacity-50"
-                        style={{
-                          background: alarm.enabled ? 'var(--card-hover)' : 'transparent',
-                          border: '1px solid var(--ring)',
-                        }}
-                        title={alarm.enabled ? '알람 비활성화' : '알람 활성화'}
-                        aria-label={alarm.enabled ? 'Disable alarm' : 'Enable alarm'}
-                      >
-                        <span className="text-lg">{getAlarmStatusIcon(alarm)}</span>
-                      </button>
-                    )}
-
-                    {/* Delete Button */}
-                    <button
-                      onClick={() => handleDelete(memo.id)}
-                      className="px-3 py-1 rounded-lg text-xs font-medium transition-all duration-200 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-offset-1"
-                      style={{
-                        background: '#EF4444',
-                        color: '#FFFFFF',
-                      }}
-                      aria-label={`Delete ${memo.title}`}
-                    >
-                      Delete
-                    </button>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-xs" style={{ color: 'var(--muted)' }}>
+                      #{memo.number}
+                    </span>
+                    <span className="text-xs" style={{ color: 'var(--muted)' }}>
+                      •
+                    </span>
+                    <span className="text-xs" style={{ color: 'var(--muted)' }}>
+                      {formatDate(memo.created_at)}
+                    </span>
                   </div>
                 </div>
 
-                {/* Description */}
-                {memo.description && (
-                  <p className="text-sm mb-3 line-clamp-2" style={{ color: 'var(--muted)' }}>
-                    {memo.description}
-                  </p>
-                )}
-
-                {/* Alarm Time */}
-                {memo.next_alarm_time && alarm?.enabled && (
-                  <div
-                    className="flex items-center justify-between text-xs py-2 px-3 rounded-lg"
+                <div className="flex items-center gap-2 shrink-0">
+                  {/* View on GitHub */}
+                  <a
+                    href={memo.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1 rounded-lg text-xs font-medium transition-all duration-200 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-offset-1"
                     style={{
                       background: 'var(--card-hover)',
                       color: 'var(--primary)',
                     }}
                   >
-                    <span className="flex items-center gap-1.5">
-                      <span role="img" aria-label="alarm">⏰</span>
-                      <span className="font-medium">Next alarm</span>
-                    </span>
-                    <span className="font-semibold text-right">
-                      {getTimeDisplay(memo.next_alarm_time, userTimezone)}
-                    </span>
-                  </div>
-                )}
+                    View
+                  </a>
 
-                {/* Disabled alarm indicator */}
-                {alarm && !alarm.enabled && (
-                  <div
-                    className="text-xs py-2 px-3 rounded-lg text-center"
+                  {/* Delete Button */}
+                  <button
+                    onClick={() => handleDelete(memo.number, memo.title)}
+                    className="px-3 py-1 rounded-lg text-xs font-medium transition-all duration-200 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-offset-1"
                     style={{
-                      background: 'var(--card-hover)',
-                      color: 'var(--muted)',
+                      background: '#EF4444',
+                      color: '#FFFFFF',
                     }}
+                    aria-label={`Delete ${memo.title}`}
                   >
-                    알람이 비활성화되었습니다
-                  </div>
-                )}
+                    Delete
+                  </button>
+                </div>
               </div>
-            );
-          })}
+
+              {/* Body/Description */}
+              {memo.body && (
+                <p className="text-sm mb-3 line-clamp-3 whitespace-pre-wrap" style={{ color: 'var(--muted)' }}>
+                  {memo.body}
+                </p>
+              )}
+
+              {/* Labels */}
+              {memo.labels && memo.labels.length > 1 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {memo.labels
+                    .filter(label => label.name !== 'memo')
+                    .map((label) => (
+                      <span
+                        key={label.name}
+                        className="text-xs px-2 py-0.5 rounded-md"
+                        style={{
+                          background: `#${label.color}20`,
+                          color: `#${label.color}`,
+                          border: `1px solid #${label.color}40`,
+                        }}
+                      >
+                        {label.name}
+                      </span>
+                    ))}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       )}
     </div>

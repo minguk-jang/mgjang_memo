@@ -1,36 +1,27 @@
 /**
- * Dashboard page - with UpcomingAlarms summary and enhanced UX
+ * Dashboard page - GitHub Issues based memo system
  */
 
 import React, { useState } from "react";
 import MemoForm from "../components/MemoForm";
 import MemoList from "../components/MemoList";
 import Header from "../components/Header";
-import UpcomingAlarms from "../components/UpcomingAlarms";
 import Toast from "../components/Toast";
-import { detectUserTimezone } from "../utils/timezone";
 import { useAuth } from "../context/AuthContext";
-
-interface Memo {
-  id: string;
-  title: string;
-  next_alarm_time: string | null;
-  alarms?: any[];
-}
+import config from "../config";
 
 const Dashboard: React.FC = () => {
   const { user, logout } = useAuth();
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
-  const [loadedMemos, setLoadedMemos] = useState<Memo[]>([]);
-  const userTimezone = detectUserTimezone();
 
   const handleMemoCreated = () => {
-    setToast({ message: 'Saved!', type: 'success' });
+    setToast({ message: 'Memo created successfully!', type: 'success' });
     setRefreshTrigger((prev) => prev + 1);
   };
 
   const handleMemoDeleted = () => {
+    setToast({ message: 'Memo deleted', type: 'info' });
     setRefreshTrigger((prev) => prev + 1);
   };
 
@@ -38,17 +29,32 @@ const Dashboard: React.FC = () => {
     setToast({ message: error, type: 'error' });
   };
 
-  const handleMemosLoaded = (memos: Memo[]) => {
-    setLoadedMemos(memos);
-  };
-
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
       <Header userEmail={user?.email} onLogout={logout} />
 
       <main className="max-w-5xl mx-auto px-6 py-8">
-        {/* Upcoming Alarms Summary Board */}
-        <UpcomingAlarms memos={loadedMemos} userTimezone={userTimezone} />
+        {/* Info Banner */}
+        <div
+          className="mb-6 p-4 rounded-xl flex items-start gap-3"
+          style={{
+            background: 'var(--card)',
+            border: '1px solid var(--ring)',
+          }}
+        >
+          <span className="text-xl">📝</span>
+          <div>
+            <h3 className="font-semibold text-sm mb-1" style={{ color: 'var(--text)' }}>
+              GitHub-powered Memos
+            </h3>
+            <p className="text-xs" style={{ color: 'var(--muted)' }}>
+              Your memos are stored as GitHub Issues in{" "}
+              <code className="px-1 py-0.5 rounded bg-black bg-opacity-10 font-mono text-xs">
+                {config.githubMemoRepo.owner || user?.github_login}/{config.githubMemoRepo.repo}
+              </code>
+            </p>
+          </div>
+        </div>
 
         {/* 2-Column Layout: Mobile 1-col, Desktop 2-col */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -64,9 +70,7 @@ const Dashboard: React.FC = () => {
           <div>
             <MemoList
               refreshTrigger={refreshTrigger}
-              userTimezone={userTimezone}
               onDelete={handleMemoDeleted}
-              onMemosLoaded={handleMemosLoaded}
             />
           </div>
         </div>

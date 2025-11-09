@@ -1,10 +1,14 @@
-import React, { createContext, useContext, useState, ReactNode, useCallback } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useCallback, useEffect } from 'react';
+import { githubMemoService } from '../services/github';
+import config from '../config';
 
 export interface User {
   id: number;
   email: string;
   timezone: string;
   telegram_chat_id?: string;
+  github_login?: string;
+  github_token?: string;
 }
 
 export interface AuthContextType {
@@ -34,6 +38,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setUser(newUser);
     localStorage.setItem('access_token', newToken);
     localStorage.setItem('user', JSON.stringify(newUser));
+
+    // Initialize GitHub service with GitHub token
+    if (newUser.github_token) {
+      githubMemoService.initialize(
+        newUser.github_token,
+        config.githubMemoRepo.owner,
+        config.githubMemoRepo.repo
+      );
+    }
   }, []);
 
   const logout = useCallback(() => {
@@ -46,6 +59,26 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const updateUser = useCallback((updatedUser: User) => {
     setUser(updatedUser);
     localStorage.setItem('user', JSON.stringify(updatedUser));
+
+    // Re-initialize GitHub service if token changed
+    if (updatedUser.github_token) {
+      githubMemoService.initialize(
+        updatedUser.github_token,
+        config.githubMemoRepo.owner,
+        config.githubMemoRepo.repo
+      );
+    }
+  }, []);
+
+  // Initialize GitHub service on mount if user is already logged in
+  useEffect(() => {
+    if (user?.github_token) {
+      githubMemoService.initialize(
+        user.github_token,
+        config.githubMemoRepo.owner,
+        config.githubMemoRepo.repo
+      );
+    }
   }, []);
 
   return (

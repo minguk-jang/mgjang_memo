@@ -10,6 +10,10 @@ interface Config {
   githubClientId?: string;
   githubRedirectUri: string;
   githubScope: string;
+  githubMemoRepo: {
+    owner: string;
+    repo: string;
+  };
 }
 
 const defaultOrigin =
@@ -23,7 +27,11 @@ const config: Config = {
   githubRedirectUri:
     import.meta.env.VITE_GITHUB_REDIRECT_URI || defaultOrigin || "",
   githubScope:
-    import.meta.env.VITE_GITHUB_OAUTH_SCOPE || "read:user user:email",
+    import.meta.env.VITE_GITHUB_OAUTH_SCOPE || "read:user user:email repo",
+  githubMemoRepo: {
+    owner: import.meta.env.VITE_GITHUB_REPO_OWNER || "",
+    repo: import.meta.env.VITE_GITHUB_REPO_NAME || "mgjang_memo",
+  },
 };
 
 export default config;

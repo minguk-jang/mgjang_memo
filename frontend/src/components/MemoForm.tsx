@@ -1,10 +1,9 @@
 /**
- * MemoForm component - Refactored with flexible alarm scheduling
+ * MemoForm component - Using GitHub Issues as storage
  */
 
 import React, { useState } from "react";
-import apiClient from "../services/api";
-import AlarmSettings, { AlarmConfig } from "./AlarmSettings";
+import { githubMemoService } from "../services/github";
 
 interface MemoFormProps {
   onSuccess?: () => void;
@@ -14,12 +13,7 @@ interface MemoFormProps {
 const MemoForm: React.FC<MemoFormProps> = ({ onSuccess, onError }) => {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [alarmConfig, setAlarmConfig] = useState<AlarmConfig>({
-    alarmType: 'repeat',
-    repeatInterval: 'daily',
-    scheduledTime: '09:00',
-    channel: 'telegram',
-  });
+  const [labels, setLabels] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -29,50 +23,29 @@ const MemoForm: React.FC<MemoFormProps> = ({ onSuccess, onError }) => {
     setLoading(true);
 
     try {
-      // Create memo
-      const memoResponse = await apiClient.post("/memos", {
+      // Parse labels (comma-separated)
+      const labelArray = labels
+        .split(',')
+        .map(l => l.trim())
+        .filter(l => l.length > 0);
+
+      await githubMemoService.createMemo({
         title,
-        description,
+        description: description || undefined,
+        labels: labelArray.length > 0 ? labelArray : undefined,
       });
-
-      const memoId = memoResponse.data.id;
-
-      // Create alarm if not 'none'
-      if (alarmConfig.alarmType !== 'none') {
-        const alarmData: any = {
-          memo_id: memoId,
-          alarm_type: alarmConfig.alarmType,
-          channel: alarmConfig.channel,
-          user_timezone: 'Asia/Seoul',
-        };
-
-        if (alarmConfig.alarmType === 'once' && alarmConfig.alarmDateTime) {
-          alarmData.alarm_time = new Date(alarmConfig.alarmDateTime).toISOString();
-        } else if (alarmConfig.alarmType === 'repeat') {
-          alarmData.repeat_interval = alarmConfig.repeatInterval;
-          alarmData.scheduled_time = alarmConfig.scheduledTime;
-          // For backward compatibility with existing API
-          alarmData.recurrence_type = alarmConfig.repeatInterval;
-        }
-
-        await apiClient.post("/alarms", alarmData);
-      }
 
       // Clear form
       setTitle("");
       setDescription("");
-      setAlarmConfig({
-        alarmType: 'repeat',
-        repeatInterval: 'daily',
-        scheduledTime: '09:00',
-        channel: 'telegram',
-      });
+      setLabels("");
 
       if (onSuccess) {
         onSuccess();
       }
     } catch (err: any) {
-      const errorMsg = err.response?.data?.detail || "Failed to create memo";
+      console.error("Failed to create memo:", err);
+      const errorMsg = err.message || "Failed to create memo";
       setError(errorMsg);
       if (onError) {
         onError(errorMsg);
@@ -88,13 +61,14 @@ const MemoForm: React.FC<MemoFormProps> = ({ onSuccess, onError }) => {
         Create New Memo
       </h2>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={handleSubmit} className="space-y-5">
         {error && (
           <div className="px-4 py-3 rounded-xl" style={{ background: '#FEE2E2', color: '#991B1B', border: '1px solid #FCA5A5' }}>
             {error}
           </div>
         )}
 
+        {/* Title */}
         <div>
           <label
             htmlFor="title"
@@ -121,6 +95,7 @@ const MemoForm: React.FC<MemoFormProps> = ({ onSuccess, onError }) => {
           />
         </div>
 
+        {/* Description */}
         <div>
           <label
             htmlFor="description"
@@ -133,9 +108,9 @@ const MemoForm: React.FC<MemoFormProps> = ({ onSuccess, onError }) => {
             id="description"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Enter memo description (optional)"
-            maxLength={2000}
-            rows={3}
+            placeholder="Enter memo description (optional, supports Markdown)"
+            maxLength={5000}
+            rows={4}
             disabled={loading}
             className="w-full px-3 py-2.5 rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[var(--primary)] resize-none"
             style={{
@@ -144,15 +119,62 @@ const MemoForm: React.FC<MemoFormProps> = ({ onSuccess, onError }) => {
               border: '1px solid var(--ring)',
             }}
           />
+          <p className="mt-1 text-xs" style={{ color: 'var(--muted)' }}>
+            Markdown formatting is supported
+          </p>
         </div>
 
-        {/* Alarm Settings */}
-        <AlarmSettings
-          value={alarmConfig}
-          onChange={setAlarmConfig}
-          disabled={loading}
-        />
+        {/* Labels/Tags */}
+        <div>
+          <label
+            htmlFor="labels"
+            className="block text-sm font-medium mb-2"
+            style={{ color: 'var(--text)' }}
+          >
+            Labels
+          </label>
+          <input
+            id="labels"
+            type="text"
+            value={labels}
+            onChange={(e) => setLabels(e.target.value)}
+            placeholder="work, personal, important (comma-separated)"
+            disabled={loading}
+            className="w-full px-3 py-2.5 rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+            style={{
+              background: 'var(--card)',
+              color: 'var(--text)',
+              border: '1px solid var(--ring)',
+            }}
+          />
+          <p className="mt-1 text-xs" style={{ color: 'var(--muted)' }}>
+            Optional. Separate multiple labels with commas.
+          </p>
+        </div>
 
+        {/* Info Box */}
+        <div
+          className="p-3 rounded-lg text-xs"
+          style={{
+            background: 'var(--card-hover)',
+            color: 'var(--muted)',
+            border: '1px solid var(--ring)',
+          }}
+        >
+          <div className="flex items-start gap-2">
+            <span className="text-sm">ℹ️</span>
+            <div>
+              <p className="font-medium mb-1" style={{ color: 'var(--text)' }}>
+                Stored as GitHub Issue
+              </p>
+              <p>
+                Your memo will be created as a GitHub Issue in your repository. You can view, edit, and manage it directly on GitHub.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Submit Button */}
         <button
           type="submit"
           disabled={loading}
