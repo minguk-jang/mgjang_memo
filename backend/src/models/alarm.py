@@ -1,60 +1,73 @@
-"""Alarm model definition."""
+"""Alarm model with flexible scheduling support."""
 
-import uuid
-from datetime import datetime
-from typing import Optional
-
-from sqlalchemy import Column, String, DateTime, ForeignKey, Boolean, JSON
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, Index, Enum as SQLEnum
 from sqlalchemy.orm import relationship
+from datetime import datetime, timezone
+from src.database import Base
+import enum
 
-from ..database import Base
+
+class AlarmType(enum.Enum):
+    """Alarm scheduling types."""
+    NONE = "none"           # No alarm
+    ONCE = "once"           # One-time alarm at specific datetime
+    REPEAT = "repeat"       # Recurring alarm
+
+
+class RepeatInterval(enum.Enum):
+    """Repeat interval types."""
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+
+
+class NotificationChannel(enum.Enum):
+    """Notification delivery channels."""
+    NONE = "none"
+    TELEGRAM = "telegram"
+    EMAIL = "email"
 
 
 class Alarm(Base):
-    """Alarm/schedule model for recurring notifications."""
+    """Alarm model for flexible alarm scheduling."""
 
     __tablename__ = "alarms"
 
-    # Primary key
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(Integer, primary_key=True, index=True)
+    memo_id = Column(Integer, ForeignKey("memos.id", ondelete="CASCADE"), nullable=False, index=True)
 
-    # Foreign key
-    memo_id = Column(UUID(as_uuid=True), ForeignKey("memos.id", ondelete="CASCADE"), nullable=False, index=True)
+    # Flexible alarm scheduling
+    alarm_type = Column(SQLEnum(AlarmType), default=AlarmType.REPEAT, nullable=False)
+    alarm_time = Column(DateTime(timezone=True), nullable=True)  # For 'once' type: specific datetime; For 'repeat': next trigger
+    repeat_interval = Column(SQLEnum(RepeatInterval), nullable=True)  # Only for 'repeat' type
+    scheduled_time = Column(String(5), nullable=True)  # HH:MM format for repeat alarms
 
-    # Scheduling
-    scheduled_time = Column(String(5), nullable=False)  # HH:MM format (24-hour)
-    recurrence_type = Column(String(20), nullable=False)  # 'daily', 'weekly', 'monthly', 'custom'
-    recurrence_days = Column(JSON, nullable=True)  # [0,1,2,3,4,5,6] for weekly, etc.
-    user_timezone = Column(String(50), nullable=False, default="UTC")
+    # Notification settings
+    channel = Column(SQLEnum(NotificationChannel), default=NotificationChannel.TELEGRAM, nullable=False)
 
-    # Execution tracking
-    next_trigger_time = Column(DateTime, nullable=False, index=True)
+    # Legacy fields (for backward compatibility)
+    recurrence_type = Column(String(20), default="daily", nullable=True)
+    recurrence_days = Column(String(255), nullable=True)
+    next_trigger_time = Column(DateTime, nullable=True, index=True)  # UTC time
     last_triggered = Column(DateTime, nullable=True)
-    enabled = Column(Boolean, default=True, index=True)
+
+    # Control fields
+    enabled = Column(Boolean, default=True, nullable=False)
+    user_timezone = Column(String(50), default="Asia/Seoul", nullable=False)
 
     # Timestamps
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
 
     # Relationships
     memo = relationship("Memo", back_populates="alarms")
     history = relationship("AlarmHistory", back_populates="alarm", cascade="all, delete-orphan")
 
-    def __repr__(self) -> str:
-        return f"<Alarm(id={self.id}, scheduled_time={self.scheduled_time}, type={self.recurrence_type})>"
+    __table_args__ = (
+        Index("idx_alarm_memo_id", "memo_id"),
+        Index("idx_alarm_next_trigger_time", "next_trigger_time"),
+        Index("idx_alarm_type_enabled", "alarm_type", "enabled"),
+    )
 
-    def to_dict(self):
-        """Convert model to dictionary."""
-        return {
-            "id": str(self.id),
-            "memo_id": str(self.memo_id),
-            "scheduled_time": self.scheduled_time,
-            "recurrence_type": self.recurrence_type,
-            "recurrence_days": self.recurrence_days,
-            "next_trigger_time": self.next_trigger_time.isoformat(),
-            "last_triggered": self.last_triggered.isoformat() if self.last_triggered else None,
-            "enabled": self.enabled,
-            "created_at": self.created_at.isoformat(),
-            "updated_at": self.updated_at.isoformat(),
-        }
+    def __repr__(self):
+        return f"<Alarm(id={self.id}, memo_id={self.memo_id}, type={self.alarm_type.value})>"

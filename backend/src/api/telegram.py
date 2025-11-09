@@ -1,71 +1,58 @@
-"""Telegram integration API endpoints."""
+"""Telegram integration API endpoints (Phase 7)."""
 
-import secrets
-from datetime import datetime, timedelta
-from uuid import UUID
-
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from datetime import datetime, timedelta, timezone
+import secrets
+import logging
 
-from ..config import settings
-from ..database import get_db
-from ..models import TelegramLinkingCode
-from ..schemas import TelegramLinkingCodeResponse
-from .auth import get_current_user
+from src.database import get_db
+from src.middleware.auth import get_current_user
+from src.models import User, TelegramLinkingCode
+from src.schemas import TelegramLinkingCodeResponse
 
-router = APIRouter(prefix="/api/v1/telegram", tags=["telegram"])
+router = APIRouter(prefix="/api/v1/telegram", tags=["Telegram"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("/linking-code", response_model=TelegramLinkingCodeResponse)
 async def generate_linking_code(
-    current_user=Depends(get_current_user),
-    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
-    """Generate Telegram linking code (expires in 10 minutes)."""
-    # Generate unique code
-    code = secrets.token_urlsafe(24)[:32]
-
-    # Create linking code
+    """Generate a Telegram linking code (10 minute expiry)."""
+    code = secrets.token_urlsafe(32)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+    
+    # Clean up old codes
+    db.query(TelegramLinkingCode).filter(
+        TelegramLinkingCode.user_id == current_user["user_id"],
+        TelegramLinkingCode.used == False
+    ).delete()
+    
     linking_code = TelegramLinkingCode(
         code=code,
-        user_id=current_user.id,
-        expires_at=datetime.utcnow() + timedelta(minutes=10),
-        used=False,
+        user_id=current_user["user_id"],
+        expires_at=expires_at
     )
-
     db.add(linking_code)
     db.commit()
     db.refresh(linking_code)
-
-    return TelegramLinkingCodeResponse(
-        code=code,
-        expires_at=linking_code.expires_at,
-    )
+    
+    return linking_code
 
 
 @router.post("/unlink")
 async def unlink_telegram(
-    current_user=Depends(get_current_user),
-    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
-    """Unlink Telegram account."""
-    current_user.telegram_chat_id = None
+    """Unlink Telegram account from user."""
+    user = db.query(User).filter(User.id == current_user["user_id"]).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    user.telegram_chat_id = None
     db.commit()
-    db.refresh(current_user)
-
-    return {
-        "id": str(current_user.id),
-        "email": current_user.email,
-        "timezone": current_user.timezone,
-        "telegram_linked": False,
-        "created_at": current_user.created_at.isoformat(),
-        "updated_at": current_user.updated_at.isoformat(),
-    }
-
-
-@router.post("/webhook")
-async def telegram_webhook(request_body: dict):
-    """Telegram Bot webhook endpoint (for production)."""
-    # This will be fully implemented in Phase 7
-    # For now, just acknowledge
-    return {"status": "ok"}
+    
+    return {"detail": "Telegram account unlinked"}

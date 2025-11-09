@@ -1,15 +1,21 @@
-"""Security utilities for JWT tokens and password hashing."""
+"""Security utilities for password hashing and JWT token management."""
 
-from datetime import datetime, timedelta
-from typing import Optional
-
-from jose import JWTError, jwt
 from passlib.context import CryptContext
+from datetime import datetime, timedelta, timezone
+from jose import JWTError, jwt
+from typing import Optional
+import os
+from dotenv import load_dotenv
 
-from ..config import settings
+load_dotenv()
 
-# Password hashing context
+# Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# JWT settings
+SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
+ALGORITHM = os.getenv("ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 
 
 def hash_password(password: str) -> str:
@@ -23,31 +29,24 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    """Create JWT access token."""
+    """Create a JWT access token."""
     to_encode = data.copy()
-
+    
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=settings.access_token_expire_minutes)
-
+        expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(
-        to_encode,
-        settings.secret_key,
-        algorithm=settings.algorithm,
-    )
+    
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
 
 def verify_token(token: str) -> Optional[dict]:
-    """Verify JWT token and return payload."""
+    """Verify and decode a JWT token."""
     try:
-        payload = jwt.decode(
-            token,
-            settings.secret_key,
-            algorithms=[settings.algorithm],
-        )
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
     except JWTError:
         return None

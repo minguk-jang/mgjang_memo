@@ -1,39 +1,32 @@
 /**
- * Dashboard page - main app component for logged-in users.
+ * Dashboard page - with UpcomingAlarms summary and enhanced UX
  */
 
-import React, { useContext, useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { AuthContext } from "../context/AuthContext";
+import React, { useState } from "react";
 import MemoForm from "../components/MemoForm";
 import MemoList from "../components/MemoList";
+import Header from "../components/Header";
+import UpcomingAlarms from "../components/UpcomingAlarms";
+import Toast from "../components/Toast";
 import { detectUserTimezone } from "../utils/timezone";
+import { useAuth } from "../context/AuthContext";
+
+interface Memo {
+  id: string;
+  title: string;
+  next_alarm_time: string | null;
+  alarms?: any[];
+}
 
 const Dashboard: React.FC = () => {
-  const authContext = useContext(AuthContext);
-  const navigate = useNavigate();
+  const { user, logout } = useAuth();
   const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const [successMessage, setSuccessMessage] = useState("");
-
-  useEffect(() => {
-    // Redirect to login if not authenticated
-    if (!authContext?.user || !authContext?.token) {
-      navigate("/login");
-    }
-  }, [authContext, navigate]);
-
-  if (!authContext?.user) {
-    return <div>Loading...</div>;
-  }
-
-  const handleLogout = () => {
-    authContext.logout();
-    navigate("/login");
-  };
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [loadedMemos, setLoadedMemos] = useState<Memo[]>([]);
+  const userTimezone = detectUserTimezone();
 
   const handleMemoCreated = () => {
-    setSuccessMessage("Memo created successfully with daily alarm!");
-    setTimeout(() => setSuccessMessage(""), 5000);
+    setToast({ message: 'Saved!', type: 'success' });
     setRefreshTrigger((prev) => prev + 1);
   };
 
@@ -41,40 +34,52 @@ const Dashboard: React.FC = () => {
     setRefreshTrigger((prev) => prev + 1);
   };
 
+  const handleError = (error: string) => {
+    setToast({ message: error, type: 'error' });
+  };
+
+  const handleMemosLoaded = (memos: Memo[]) => {
+    setLoadedMemos(memos);
+  };
+
   return (
-    <div className="dashboard">
-      <header className="dashboard-header">
-        <h1>📋 Telegram Memo Alert System</h1>
-        <div className="user-info">
-          <span>👤 {authContext.user.email}</span>
-          <button onClick={handleLogout} className="btn-logout">
-            Logout
-          </button>
-        </div>
-      </header>
+    <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
+      <Header userEmail={user?.email} onLogout={logout} />
 
-      <main className="dashboard-content">
-        {successMessage && (
-          <div className="success-message">{successMessage}</div>
-        )}
+      <main className="max-w-5xl mx-auto px-6 py-8">
+        {/* Upcoming Alarms Summary Board */}
+        <UpcomingAlarms memos={loadedMemos} userTimezone={userTimezone} />
 
-        <div className="dashboard-grid">
-          <aside className="sidebar">
+        {/* 2-Column Layout: Mobile 1-col, Desktop 2-col */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Left Column: Memo Form */}
+          <div>
             <MemoForm
               onSuccess={handleMemoCreated}
-              onError={(error) => console.error(error)}
+              onError={handleError}
             />
-          </aside>
+          </div>
 
-          <section className="main-content">
+          {/* Right Column: Memo List */}
+          <div>
             <MemoList
               refreshTrigger={refreshTrigger}
-              userTimezone={authContext.user.timezone || detectUserTimezone()}
+              userTimezone={userTimezone}
               onDelete={handleMemoDeleted}
+              onMemosLoaded={handleMemosLoaded}
             />
-          </section>
+          </div>
         </div>
       </main>
+
+      {/* Toast Notification */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
     </div>
   );
 };

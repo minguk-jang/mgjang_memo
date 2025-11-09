@@ -1,55 +1,30 @@
-"""Memo model definition."""
+"""Memo model for storing user memos/tasks."""
 
-import uuid
-from datetime import datetime
-
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Index
 from sqlalchemy.orm import relationship
-
-from ..database import Base
+from datetime import datetime, timezone
+from src.database import Base
 
 
 class Memo(Base):
-    """Memo/task model representing user's notes and reminders."""
-
+    """Memo model for storing memo/task information."""
+    
     __tablename__ = "memos"
-
-    # Primary key
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-
-    # Foreign key
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-
-    # Content
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     title = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
-
-    # Timestamps
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
-
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+    
     # Relationships
     user = relationship("User", back_populates="memos")
     alarms = relationship("Alarm", back_populates="memo", cascade="all, delete-orphan")
-
-    def __repr__(self) -> str:
-        return f"<Memo(id={self.id}, title={self.title})>"
-
-    def to_dict(self, include_alarms=False):
-        """Convert model to dictionary."""
-        data = {
-            "id": str(self.id),
-            "user_id": str(self.user_id),
-            "title": self.title,
-            "description": self.description,
-            "created_at": self.created_at.isoformat(),
-            "updated_at": self.updated_at.isoformat(),
-        }
-
-        if include_alarms and self.alarms:
-            data["alarms"] = [alarm.to_dict() for alarm in self.alarms]
-            if self.alarms:
-                data["next_alarm_time"] = self.alarms[0].next_trigger_time.isoformat()
-
-        return data
+    
+    __table_args__ = (
+        Index("idx_memo_user_id", "user_id"),
+    )
+    
+    def __repr__(self):
+        return f"<Memo(id={self.id}, title={self.title}, user_id={self.user_id})>"

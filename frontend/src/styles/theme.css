@@ -1,0 +1,121 @@
+/* Theme CSS Variables */
+
+:root[data-theme="light"] {
+  --bg: #F9FAFB;
+  --card: #FFFFFF;
+  --text: #111827;
+  --muted: #6B7280;
+  --primary: #3B82F6;
+  --ring: #E5E7EB;
+  --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --card-hover: #F9FAFB;
+}
+
+:root[data-theme="dark"] {
+  --bg: linear-gradient(180deg, #0B1220 0%, #0A0F1A 50%, #0B1220 100%);
+  --bg-solid: #0A0F1A;
+  --card: rgba(255, 255, 255, 0.08);
+  --text: #E5EDF5;
+  --muted: #94A3B8;
+  --primary: #38BDF8;
+  --ring: rgba(255, 255, 255, 0.14);
+  --shadow: 0 8px 16px -4px rgba(0, 0, 0, 0.4);
+  --card-hover: rgba(255, 255, 255, 0.12);
+}
+
+body {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+[data-theme="light"] body {
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+[data-theme="dark"] body {
+  background: var(--bg);
+  background-attachment: fixed;
+  color: var(--text);
+}
+
+/* Glassmorphism utilities */
+.glass-card {
+  background: var(--card);
+  border: 1px solid var(--ring);
+  box-shadow: var(--shadow);
+}
+
+[data-theme="dark"] .glass-card {
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+/* Scrollbar styling */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--muted);
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
+}
+
+/* Spinner animation */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Toast slide-in animation */
+@keyframes slideInUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.toast-enter {
+  animation: slideInUp 0.3s ease-out;
+}
+
+/* Fade in animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-out;
+}
+
+/* Shake animation for errors */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
+  20%, 40%, 60%, 80% { transform: translateX(4px); }
+}
+
+.animate-shake {
+  animation: shake 0.5s ease-in-out;
+}

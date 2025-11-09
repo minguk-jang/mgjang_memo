@@ -1,9 +1,10 @@
 /**
- * MemoForm component for creating/editing memos with daily alarms.
+ * MemoForm component - Refactored with flexible alarm scheduling
  */
 
 import React, { useState } from "react";
 import apiClient from "../services/api";
+import AlarmSettings, { AlarmConfig } from "./AlarmSettings";
 
 interface MemoFormProps {
   onSuccess?: () => void;
@@ -13,7 +14,12 @@ interface MemoFormProps {
 const MemoForm: React.FC<MemoFormProps> = ({ onSuccess, onError }) => {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [alarmTime, setAlarmTime] = useState("09:00");
+  const [alarmConfig, setAlarmConfig] = useState<AlarmConfig>({
+    alarmType: 'repeat',
+    repeatInterval: 'daily',
+    scheduledTime: '09:00',
+    channel: 'telegram',
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -31,17 +37,36 @@ const MemoForm: React.FC<MemoFormProps> = ({ onSuccess, onError }) => {
 
       const memoId = memoResponse.data.id;
 
-      // Create daily alarm
-      await apiClient.post("/alarms", {
-        memo_id: memoId,
-        scheduled_time: alarmTime,
-        recurrence_type: "daily",
-      });
+      // Create alarm if not 'none'
+      if (alarmConfig.alarmType !== 'none') {
+        const alarmData: any = {
+          memo_id: memoId,
+          alarm_type: alarmConfig.alarmType,
+          channel: alarmConfig.channel,
+          user_timezone: 'Asia/Seoul',
+        };
+
+        if (alarmConfig.alarmType === 'once' && alarmConfig.alarmDateTime) {
+          alarmData.alarm_time = new Date(alarmConfig.alarmDateTime).toISOString();
+        } else if (alarmConfig.alarmType === 'repeat') {
+          alarmData.repeat_interval = alarmConfig.repeatInterval;
+          alarmData.scheduled_time = alarmConfig.scheduledTime;
+          // For backward compatibility with existing API
+          alarmData.recurrence_type = alarmConfig.repeatInterval;
+        }
+
+        await apiClient.post("/alarms", alarmData);
+      }
 
       // Clear form
       setTitle("");
       setDescription("");
-      setAlarmTime("09:00");
+      setAlarmConfig({
+        alarmType: 'repeat',
+        repeatInterval: 'daily',
+        scheduledTime: '09:00',
+        channel: 'telegram',
+      });
 
       if (onSuccess) {
         onSuccess();
@@ -58,54 +83,95 @@ const MemoForm: React.FC<MemoFormProps> = ({ onSuccess, onError }) => {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="memo-form">
-      <h3>Create New Memo</h3>
+    <div className="glass-card rounded-2xl p-6">
+      <h2 className="text-lg font-semibold mb-6" style={{ color: 'var(--text)' }}>
+        Create New Memo
+      </h2>
 
-      {error && <div className="error-message">{error}</div>}
+      <form onSubmit={handleSubmit} className="space-y-6">
+        {error && (
+          <div className="px-4 py-3 rounded-xl" style={{ background: '#FEE2E2', color: '#991B1B', border: '1px solid #FCA5A5' }}>
+            {error}
+          </div>
+        )}
 
-      <div className="form-group">
-        <label htmlFor="title">Title *</label>
-        <input
-          id="title"
-          type="text"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Enter memo title"
-          required
-          maxLength={255}
+        <div>
+          <label
+            htmlFor="title"
+            className="block text-sm font-medium mb-2"
+            style={{ color: 'var(--text)' }}
+          >
+            Title *
+          </label>
+          <input
+            id="title"
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Enter memo title"
+            required
+            maxLength={255}
+            disabled={loading}
+            className="w-full px-3 py-2.5 rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+            style={{
+              background: 'var(--card)',
+              color: 'var(--text)',
+              border: '1px solid var(--ring)',
+            }}
+          />
+        </div>
+
+        <div>
+          <label
+            htmlFor="description"
+            className="block text-sm font-medium mb-2"
+            style={{ color: 'var(--text)' }}
+          >
+            Description
+          </label>
+          <textarea
+            id="description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Enter memo description (optional)"
+            maxLength={2000}
+            rows={3}
+            disabled={loading}
+            className="w-full px-3 py-2.5 rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[var(--primary)] resize-none"
+            style={{
+              background: 'var(--card)',
+              color: 'var(--text)',
+              border: '1px solid var(--ring)',
+            }}
+          />
+        </div>
+
+        {/* Alarm Settings */}
+        <AlarmSettings
+          value={alarmConfig}
+          onChange={setAlarmConfig}
           disabled={loading}
         />
-      </div>
 
-      <div className="form-group">
-        <label htmlFor="description">Description</label>
-        <textarea
-          id="description"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="Enter memo description (optional)"
-          maxLength={2000}
-          rows={3}
+        <button
+          type="submit"
           disabled={loading}
-        />
-      </div>
-
-      <div className="form-group">
-        <label htmlFor="alarmTime">Daily Alarm Time *</label>
-        <input
-          id="alarmTime"
-          type="time"
-          value={alarmTime}
-          onChange={(e) => setAlarmTime(e.target.value)}
-          required
-          disabled={loading}
-        />
-      </div>
-
-      <button type="submit" disabled={loading}>
-        {loading ? "Creating..." : "Create Memo with Daily Alarm"}
-      </button>
-    </form>
+          className="w-full px-4 py-3 rounded-xl font-semibold transition-all duration-200 hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[var(--primary)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          style={{
+            background: 'var(--primary)',
+            color: '#FFFFFF',
+          }}
+        >
+          {loading && (
+            <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+          )}
+          {loading ? "Creating..." : "Create Memo"}
+        </button>
+      </form>
+    </div>
   );
 };
 

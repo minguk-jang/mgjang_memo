@@ -1,163 +1,155 @@
-"""Recurrence pattern utilities for alarm scheduling."""
+"""Recurrence pattern validation and calculation utilities."""
 
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from typing import Optional, List
+import json
 
-from .timezone import convert_to_utc, convert_to_user_tz
 
-
-def validate_recurrence_pattern(
-    recurrence_type: str,
-    recurrence_days: Optional[List[int]] = None,
-) -> bool:
+def validate_recurrence_pattern(recurrence_type: str, recurrence_days: Optional[str]) -> bool:
     """Validate recurrence pattern based on type."""
     if recurrence_type == "daily":
-        return True
+        return recurrence_days is None or recurrence_days == ""
+    
     elif recurrence_type == "weekly":
-        return recurrence_days is not None and all(0 <= d <= 6 for d in recurrence_days)
+        if not recurrence_days:
+            return False
+        try:
+            days = json.loads(recurrence_days) if isinstance(recurrence_days, str) else recurrence_days
+            return isinstance(days, list) and all(0 <= d <= 6 for d in days)
+        except:
+            return False
+    
     elif recurrence_type == "monthly":
-        return recurrence_days is not None and all(1 <= d <= 31 for d in recurrence_days)
+        if not recurrence_days:
+            return False
+        try:
+            days = json.loads(recurrence_days) if isinstance(recurrence_days, str) else recurrence_days
+            return isinstance(days, list) and all(1 <= d <= 31 for d in days)
+        except:
+            return False
+    
     elif recurrence_type == "custom":
-        return recurrence_days is not None and all(0 <= d <= 6 for d in recurrence_days)
+        if not recurrence_days:
+            return False
+        try:
+            days = json.loads(recurrence_days) if isinstance(recurrence_days, str) else recurrence_days
+            return isinstance(days, list) and all(0 <= d <= 6 for d in days)
+        except:
+            return False
+    
     return False
 
 
 def calculate_next_trigger_time(
-    scheduled_time: str,  # "HH:MM"
+    scheduled_time: str,
     recurrence_type: str,
-    recurrence_days: Optional[List[int]],
-    user_timezone: str,
+    recurrence_days: Optional[str],
+    user_timezone: str
 ) -> datetime:
-    """Calculate next trigger time in UTC based on recurrence pattern."""
-    now_utc = datetime.utcnow()
-    now_user_tz = convert_to_user_tz(now_utc, user_timezone)
-
-    # Parse scheduled time
-    hour, minute = map(int, scheduled_time.split(":"))
-
+    """Calculate next trigger time based on recurrence pattern."""
+    
+    from src.utils.timezone import convert_to_utc
+    
+    # Parse scheduled time (HH:MM format)
+    hours, minutes = map(int, scheduled_time.split(":"))
+    
+    # Get current time in user's timezone
+    now_utc = datetime.now(ZoneInfo("UTC"))
+    user_tz = ZoneInfo(user_timezone)
+    now_local = now_utc.astimezone(user_tz)
+    
     if recurrence_type == "daily":
-        return _calculate_next_daily(now_user_tz, hour, minute, user_timezone)
+        return _calculate_next_daily(hours, minutes, now_local, user_tz)
     elif recurrence_type == "weekly":
-        return _calculate_next_weekly(now_user_tz, hour, minute, recurrence_days, user_timezone)
+        days = json.loads(recurrence_days) if isinstance(recurrence_days, str) else recurrence_days
+        return _calculate_next_weekly(hours, minutes, days, now_local, user_tz)
     elif recurrence_type == "monthly":
-        return _calculate_next_monthly(now_user_tz, hour, minute, recurrence_days, user_timezone)
+        days = json.loads(recurrence_days) if isinstance(recurrence_days, str) else recurrence_days
+        return _calculate_next_monthly(hours, minutes, days, now_local, user_tz)
     elif recurrence_type == "custom":
-        return _calculate_next_custom(now_user_tz, hour, minute, recurrence_days, user_timezone)
-
-    # Default: daily
-    return _calculate_next_daily(now_user_tz, hour, minute, user_timezone)
-
-
-def _calculate_next_daily(
-    now_user_tz: datetime,
-    hour: int,
-    minute: int,
-    user_timezone: str,
-) -> datetime:
-    """Calculate next daily trigger time."""
-    next_time = now_user_tz.replace(hour=hour, minute=minute, second=0, microsecond=0)
-
-    if next_time <= now_user_tz:
-        next_time += timedelta(days=1)
-
-    return convert_to_utc(next_time, user_timezone)
+        days = json.loads(recurrence_days) if isinstance(recurrence_days, str) else recurrence_days
+        return _calculate_next_custom(hours, minutes, days, now_local, user_tz)
+    
+    # Default to daily
+    return _calculate_next_daily(hours, minutes, now_local, user_tz)
 
 
-def _calculate_next_weekly(
-    now_user_tz: datetime,
-    hour: int,
-    minute: int,
-    recurrence_days: List[int],
-    user_timezone: str,
-) -> datetime:
-    """Calculate next weekly trigger time."""
-    current_weekday = now_user_tz.weekday()  # 0=Monday, 6=Sunday
-    # Convert to 0=Sunday, 6=Saturday
-    current_weekday_iso = (current_weekday + 1) % 7
+def _calculate_next_daily(hours: int, minutes: int, now_local: datetime, user_tz: ZoneInfo) -> datetime:
+    """Calculate next trigger for daily recurrence."""
+    next_local = now_local.replace(hour=hours, minute=minutes, second=0, microsecond=0)
+    
+    if next_local <= now_local:
+        next_local += timedelta(days=1)
+    
+    return next_local.astimezone(ZoneInfo("UTC"))
 
-    recurrence_days = sorted(recurrence_days)
-    next_date = now_user_tz.date()
 
+def _calculate_next_weekly(hours: int, minutes: int, days: List[int], now_local: datetime, user_tz: ZoneInfo) -> datetime:
+    """Calculate next trigger for weekly recurrence."""
+    days_set = set(days)
+    current_weekday = now_local.weekday()
+    
+    next_local = now_local.replace(hour=hours, minute=minutes, second=0, microsecond=0)
+    
+    # Check if we can trigger today
+    if current_weekday in days_set and next_local > now_local:
+        return next_local.astimezone(ZoneInfo("UTC"))
+    
     # Find next matching weekday
-    for day in recurrence_days:
-        # Check today
-        if day >= current_weekday_iso:
-            test_date = next_date
-        else:
-            # Next week
-            test_date = next_date + timedelta(days=7)
-
-        test_datetime = test_date.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        test_tz = test_datetime.replace(tzinfo=ZoneInfo(user_timezone))
-
-        if test_tz > now_user_tz:
-            return convert_to_utc(test_tz, user_timezone)
-
-    # Wrap to next week
-    first_day = recurrence_days[0]
-    days_until = (first_day - current_weekday_iso) % 7
-    if days_until == 0:
-        days_until = 7
-
-    next_date = now_user_tz.date() + timedelta(days=days_until)
-    next_time = next_date.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    next_tz = next_time.replace(tzinfo=ZoneInfo(user_timezone))
-
-    return convert_to_utc(next_tz, user_timezone)
+    for i in range(1, 8):
+        check_date = now_local + timedelta(days=i)
+        if check_date.weekday() in days_set:
+            next_local = check_date.replace(hour=hours, minute=minutes, second=0, microsecond=0)
+            return next_local.astimezone(ZoneInfo("UTC"))
+    
+    # Fallback to first day in pattern
+    for i in range(1, 8):
+        check_date = now_local + timedelta(days=i)
+        if check_date.weekday() in days_set:
+            next_local = check_date.replace(hour=hours, minute=minutes, second=0, microsecond=0)
+            return next_local.astimezone(ZoneInfo("UTC"))
+    
+    return next_local.astimezone(ZoneInfo("UTC"))
 
 
-def _calculate_next_monthly(
-    now_user_tz: datetime,
-    hour: int,
-    minute: int,
-    recurrence_days: List[int],
-    user_timezone: str,
-) -> datetime:
-    """Calculate next monthly trigger time."""
-    current_day = now_user_tz.day
-    recurrence_days = sorted(recurrence_days)
-
-    # Check this month
-    for day in recurrence_days:
+def _calculate_next_monthly(hours: int, minutes: int, days: List[int], now_local: datetime, user_tz: ZoneInfo) -> datetime:
+    """Calculate next trigger for monthly recurrence."""
+    current_day = now_local.day
+    current_month = now_local.month
+    current_year = now_local.year
+    
+    next_local = now_local.replace(hour=hours, minute=minutes, second=0, microsecond=0)
+    
+    # Check if we can trigger this month
+    for day in sorted(days):
         if day >= current_day:
             try:
-                next_date = now_user_tz.date().replace(day=day)
-                next_time = next_date.replace(hour=hour, minute=minute, second=0, microsecond=0)
-                next_tz = next_time.replace(tzinfo=ZoneInfo(user_timezone))
-
-                if next_tz > now_user_tz:
-                    return convert_to_utc(next_tz, user_timezone)
+                candidate = next_local.replace(day=day)
+                if candidate > now_local:
+                    return candidate.astimezone(ZoneInfo("UTC"))
             except ValueError:
-                # Day doesn't exist in month (e.g., Feb 30)
+                # Day doesn't exist in this month
                 continue
-
-    # Next month
-    if now_user_tz.month == 12:
-        first_day_next_month = (now_user_tz + timedelta(days=32)).replace(day=1)
+    
+    # Move to next month
+    if current_month == 12:
+        next_month = 1
+        next_year = current_year + 1
     else:
-        first_day_next_month = now_user_tz.replace(month=now_user_tz.month + 1, day=1)
-
-    for day in recurrence_days:
+        next_month = current_month + 1
+        next_year = current_year
+    
+    for day in sorted(days):
         try:
-            next_date = first_day_next_month.replace(day=day)
-            next_time = next_date.replace(hour=hour, minute=minute, second=0, microsecond=0)
-            next_tz = next_time.replace(tzinfo=ZoneInfo(user_timezone))
-            return convert_to_utc(next_tz, user_timezone)
+            candidate = next_local.replace(year=next_year, month=next_month, day=day)
+            return candidate.astimezone(ZoneInfo("UTC"))
         except ValueError:
             continue
-
-    # Fallback to next month first valid day
-    next_tz = first_day_next_month.replace(hour=hour, minute=minute, second=0, microsecond=0, tzinfo=ZoneInfo(user_timezone))
-    return convert_to_utc(next_tz, user_timezone)
+    
+    return next_local.astimezone(ZoneInfo("UTC"))
 
 
-def _calculate_next_custom(
-    now_user_tz: datetime,
-    hour: int,
-    minute: int,
-    recurrence_days: List[int],
-    user_timezone: str,
-) -> datetime:
-    """Calculate next custom pattern trigger time (same as weekly)."""
-    return _calculate_next_weekly(now_user_tz, hour, minute, recurrence_days, user_timezone)
+def _calculate_next_custom(hours: int, minutes: int, days: List[int], now_local: datetime, user_tz: ZoneInfo) -> datetime:
+    """Calculate next trigger for custom recurrence (same as weekly)."""
+    return _calculate_next_weekly(hours, minutes, days, now_local, user_tz)

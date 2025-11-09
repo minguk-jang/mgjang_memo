@@ -1,45 +1,46 @@
-"""Application configuration using Pydantic Settings."""
-
-from functools import lru_cache
-from typing import Optional
+"""Backend environment configuration using pydantic-settings."""
 
 from pydantic_settings import BaseSettings
+from typing import List, Optional
+import os
 
 
 class Settings(BaseSettings):
-    """Application settings loaded from environment variables."""
-
+    """Application settings from environment variables."""
+    
     # Database
-    database_url: str = "sqlite:///./memo.db"
-
-    # Telegram
-    telegram_bot_token: str = ""
-    telegram_bot_username: str = ""
-
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./memo.db")
+    
     # JWT
-    secret_key: str = "your-secret-key-min-32-chars-for-security-12345678"
-    algorithm: str = "HS256"
-    access_token_expire_minutes: int = 30
-    refresh_token_expire_days: int = 7
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
+    ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+    
+    # Telegram
+    TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    TELEGRAM_WEBHOOK_URL: str = os.getenv("TELEGRAM_WEBHOOK_URL", "")
 
-    # Server
-    backend_url: str = "http://localhost:8000"
-    frontend_url: str = "http://localhost:3000"
-
-    # Environment
-    environment: str = "development"
-    debug: bool = True
-    log_level: str = "INFO"
-
+    # GitHub OAuth
+    GITHUB_CLIENT_ID: Optional[str] = os.getenv("GITHUB_CLIENT_ID")
+    GITHUB_CLIENT_SECRET: Optional[str] = os.getenv("GITHUB_CLIENT_SECRET")
+    
+    # Application
+    APP_NAME: str = os.getenv("APP_NAME", "Telegram Memo Alerts")
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
+    DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
+    
+    # CORS
+    CORS_ORIGINS: List[str] = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+    ]
+    
+    # Logging
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+    
     class Config:
         env_file = ".env"
-        case_sensitive = False
+        case_sensitive = True
 
 
-@lru_cache()
-def get_settings() -> Settings:
-    """Get application settings (cached)."""
-    return Settings()
-
-
-settings = get_settings()
+settings = Settings()

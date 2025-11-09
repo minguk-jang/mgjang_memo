@@ -1,84 +1,64 @@
-/**
- * Authentication context for managing user state.
- */
+import React, { createContext, useContext, useState, ReactNode, useCallback } from 'react';
 
-import React, { createContext, useState, useCallback } from "react";
-
-interface User {
-  id: string;
+export interface User {
+  id: number;
   email: string;
   timezone: string;
-  telegram_linked: boolean;
+  telegram_chat_id?: string;
 }
 
-interface AuthContextType {
+export interface AuthContextType {
   user: User | null;
   token: string | null;
-  login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
-  setUser: (user: User | null) => void;
   setToken: (token: string | null) => void;
+  setUser: (user: User | null) => void;
+  login: (token: string, user: User) => void;
+  logout: () => void;
+  updateUser: (user: User) => void;
 }
 
-export const AuthContext = createContext<AuthContextType | undefined>(
-  undefined
-);
+export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
-  children,
-}) => {
-  const [user, setUser] = useState<User | null>(
-    JSON.parse(localStorage.getItem("user") || "null")
-  );
-  const [token, setToken] = useState<string | null>(
-    localStorage.getItem("token")
-  );
+export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<User | null>(() => {
+    const stored = localStorage.getItem('user');
+    return stored ? JSON.parse(stored) : null;
+  });
+
+  const [token, setToken] = useState<string | null>(() => {
+    return localStorage.getItem('access_token');
+  });
+
+  const login = useCallback((newToken: string, newUser: User) => {
+    setToken(newToken);
+    setUser(newUser);
+    localStorage.setItem('access_token', newToken);
+    localStorage.setItem('user', JSON.stringify(newUser));
+  }, []);
 
   const logout = useCallback(() => {
-    setUser(null);
     setToken(null);
-    localStorage.removeItem("user");
-    localStorage.removeItem("token");
+    setUser(null);
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('user');
   }, []);
 
-  const handleSetUser = useCallback((newUser: User | null) => {
-    setUser(newUser);
-    if (newUser) {
-      localStorage.setItem("user", JSON.stringify(newUser));
-    } else {
-      localStorage.removeItem("user");
-    }
+  const updateUser = useCallback((updatedUser: User) => {
+    setUser(updatedUser);
+    localStorage.setItem('user', JSON.stringify(updatedUser));
   }, []);
-
-  const handleSetToken = useCallback((newToken: string | null) => {
-    setToken(newToken);
-    if (newToken) {
-      localStorage.setItem("token", newToken);
-    } else {
-      localStorage.removeItem("token");
-    }
-  }, []);
-
-  const login = useCallback(
-    async (email: string, password: string) => {
-      // Implementation in Phase 3
-      throw new Error("Login not implemented yet");
-    },
-    []
-  );
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        token,
-        login,
-        logout,
-        setUser: handleSetUser,
-        setToken: handleSetToken,
-      }}
-    >
+    <AuthContext.Provider value={{ user, token, setToken, setUser, login, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );
+};
+
+export const useAuth = (): AuthContextType => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within AuthProvider');
+  }
+  return context;
 };
