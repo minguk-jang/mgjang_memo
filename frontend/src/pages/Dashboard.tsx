@@ -16,8 +16,12 @@ const Dashboard: React.FC = () => {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   const handleMemoCreated = () => {
+    console.log('handleMemoCreated called');
     setToast({ message: 'Memo created successfully!', type: 'success' });
-    setRefreshTrigger((prev) => prev + 1);
+    setRefreshTrigger((prev) => {
+      console.log('Updating refreshTrigger from', prev, 'to', prev + 1);
+      return prev + 1;
+    });
   };
 
   const handleMemoDeleted = () => {

@@ -2,7 +2,7 @@
  * MemoList component - Using GitHub Issues as storage
  */
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { githubMemoService, GitHubMemo } from "../services/github";
 import { useAuth } from "../context/AuthContext";
 
@@ -22,7 +22,7 @@ const MemoList: React.FC<MemoListProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const fetchMemos = async () => {
+  const fetchMemos = useCallback(async () => {
     // Don't fetch if user is not logged in or doesn't have GitHub token
     if (!user?.github_token) {
       setLoading(false);
@@ -33,7 +33,9 @@ const MemoList: React.FC<MemoListProps> = ({
     setError("");
 
     try {
+      console.log('Fetching memos from GitHub...');
       const memoList = await githubMemoService.listMemos('open');
+      console.log('Fetched memos:', memoList.length);
       setMemos(memoList);
 
       if (onMemosLoaded) {
@@ -45,11 +47,12 @@ const MemoList: React.FC<MemoListProps> = ({
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.github_token, onMemosLoaded]);
 
   useEffect(() => {
+    console.log('MemoList useEffect triggered, refreshTrigger:', refreshTrigger);
     fetchMemos();
-  }, [refreshTrigger, user?.github_token]);
+  }, [refreshTrigger, fetchMemos]);
 
   const handleDelete = async (issueNumber: number, title: string) => {
     if (!window.confirm(`Are you sure you want to delete "${title}"?`)) {
