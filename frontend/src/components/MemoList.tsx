@@ -4,6 +4,7 @@
 
 import React, { useEffect, useState } from "react";
 import { githubMemoService, GitHubMemo } from "../services/github";
+import { useAuth } from "../context/AuthContext";
 
 interface MemoListProps {
   refreshTrigger?: number;
@@ -16,11 +17,18 @@ const MemoList: React.FC<MemoListProps> = ({
   onDelete,
   onMemosLoaded,
 }) => {
+  const { user } = useAuth();
   const [memos, setMemos] = useState<GitHubMemo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const fetchMemos = async () => {
+    // Don't fetch if user is not logged in or doesn't have GitHub token
+    if (!user?.github_token) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError("");
 
@@ -41,7 +49,7 @@ const MemoList: React.FC<MemoListProps> = ({
 
   useEffect(() => {
     fetchMemos();
-  }, [refreshTrigger]);
+  }, [refreshTrigger, user?.github_token]);
 
   const handleDelete = async (issueNumber: number, title: string) => {
     if (!window.confirm(`Are you sure you want to delete "${title}"?`)) {

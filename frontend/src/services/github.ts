@@ -46,10 +46,17 @@ class GitHubMemoService {
   }
 
   /**
-   * Check if service is initialized
+   * Check if service is initialized (public method)
+   */
+  isInitialized(): boolean {
+    return !!(this.octokit && this.owner && this.repo);
+  }
+
+  /**
+   * Check if service is initialized (throws error if not)
    */
   private ensureInitialized() {
-    if (!this.octokit || !this.owner || !this.repo) {
+    if (!this.isInitialized()) {
       throw new Error('GitHub service not initialized. Call initialize() first.');
     }
   }
