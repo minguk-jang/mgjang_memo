@@ -28,16 +28,43 @@ const GitHubTokenLogin: React.FC<GitHubTokenLoginProps> = ({ onSuccess, error })
       const octokit = new Octokit({ auth: token });
       const { data: user } = await octokit.rest.users.getAuthenticated();
 
+      console.log('Authenticated as:', user.login);
+
       // Check if user has access to the repository
+      const repoOwner = config.githubMemoRepo.owner || user.login;
+      const repoName = config.githubMemoRepo.repo;
+
+      console.log('Checking repository access:', `${repoOwner}/${repoName}`);
+
       try {
-        await octokit.rest.repos.get({
-          owner: config.githubMemoRepo.owner || user.login,
-          repo: config.githubMemoRepo.repo,
+        const repoResponse = await octokit.rest.repos.get({
+          owner: repoOwner,
+          repo: repoName,
         });
+
+        console.log('Repository found:', repoResponse.data.full_name);
+        console.log('Permissions:', repoResponse.data.permissions);
+
+        // Check if token has necessary permissions
+        if (!repoResponse.data.permissions?.push) {
+          setLocalError(
+            `Insufficient permissions. Your token needs write access to ${repoOwner}/${repoName}. Please use a Classic Token with 'repo' scope or Fine-grained Token with 'Issues: Read and write' permission.`
+          );
+          setLoading(false);
+          return;
+        }
       } catch (repoError: any) {
+        console.error('Repository access error:', repoError);
         if (repoError.status === 404) {
           setLocalError(
-            `Repository not found: ${config.githubMemoRepo.owner || user.login}/${config.githubMemoRepo.repo}. Please check the repository name or create it.`
+            `Repository not found: ${repoOwner}/${repoName}. Please check the repository name or create it.`
+          );
+          setLoading(false);
+          return;
+        }
+        if (repoError.status === 403) {
+          setLocalError(
+            `Access forbidden. Make sure your token has 'repo' scope (Classic) or 'Issues: Read and write' permission (Fine-grained).`
           );
           setLoading(false);
           return;
