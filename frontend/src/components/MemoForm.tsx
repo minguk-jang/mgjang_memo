@@ -29,19 +29,24 @@ const MemoForm: React.FC<MemoFormProps> = ({ onSuccess, onError }) => {
         .map(l => l.trim())
         .filter(l => l.length > 0);
 
-      await githubMemoService.createMemo({
+      console.log('Creating memo with title:', title);
+      const createdMemo = await githubMemoService.createMemo({
         title,
         description: description || undefined,
         labels: labelArray.length > 0 ? labelArray : undefined,
       });
+      console.log('Memo created successfully:', createdMemo);
 
       // Clear form
       setTitle("");
       setDescription("");
       setLabels("");
 
+      console.log('Calling onSuccess callback');
       if (onSuccess) {
         onSuccess();
+      } else {
+        console.warn('onSuccess callback not provided');
       }
     } catch (err: any) {
       console.error("Failed to create memo:", err);
