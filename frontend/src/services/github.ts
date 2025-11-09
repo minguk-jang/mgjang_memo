@@ -89,6 +89,10 @@ class GitHubMemoService {
       sort: 'created',
       direction: 'desc',
       per_page: 100,
+      // Add cache busting
+      headers: {
+        'If-None-Match': '',
+      },
     });
 
     return response.data.map((issue) => ({

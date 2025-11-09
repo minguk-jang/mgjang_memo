@@ -18,10 +18,14 @@ const Dashboard: React.FC = () => {
   const handleMemoCreated = () => {
     console.log('handleMemoCreated called');
     setToast({ message: 'Memo created successfully!', type: 'success' });
-    setRefreshTrigger((prev) => {
-      console.log('Updating refreshTrigger from', prev, 'to', prev + 1);
-      return prev + 1;
-    });
+
+    // Add a small delay to allow GitHub to process the new issue
+    setTimeout(() => {
+      setRefreshTrigger((prev) => {
+        console.log('Updating refreshTrigger from', prev, 'to', prev + 1);
+        return prev + 1;
+      });
+    }, 500); // 500ms delay
   };
 
   const handleMemoDeleted = () => {
