@@ -30,10 +30,15 @@ class Settings(BaseSettings):
     DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
     
     # CORS
-    CORS_ORIGINS: List[str] = [
-        "http://localhost:3000",
-        "http://localhost:5173",
-    ]
+    CORS_ORIGINS: List[str] = (
+        os.getenv("CORS_ORIGINS", "").split(",")
+        if os.getenv("CORS_ORIGINS")
+        else [
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "https://minguk-jang.github.io",
+        ]
+    )
     
     # Logging
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")

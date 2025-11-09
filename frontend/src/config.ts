@@ -29,7 +29,7 @@ const config: Config = {
   githubScope:
     import.meta.env.VITE_GITHUB_OAUTH_SCOPE || "read:user user:email repo",
   githubMemoRepo: {
-    owner: import.meta.env.VITE_GITHUB_REPO_OWNER || "",
+    owner: import.meta.env.VITE_GITHUB_REPO_OWNER || "minguk-jang",
     repo: import.meta.env.VITE_GITHUB_REPO_NAME || "mgjang_memo",
   },
 };

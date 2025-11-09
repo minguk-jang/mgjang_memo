@@ -43,7 +43,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (newUser.github_token) {
       githubMemoService.initialize(
         newUser.github_token,
-        config.githubMemoRepo.owner,
+        config.githubMemoRepo.owner || newUser.github_login || '',
         config.githubMemoRepo.repo
       );
     }
@@ -64,7 +64,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (updatedUser.github_token) {
       githubMemoService.initialize(
         updatedUser.github_token,
-        config.githubMemoRepo.owner,
+        config.githubMemoRepo.owner || updatedUser.github_login || '',
         config.githubMemoRepo.repo
       );
     }
@@ -75,11 +75,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (user?.github_token) {
       githubMemoService.initialize(
         user.github_token,
-        config.githubMemoRepo.owner,
+        config.githubMemoRepo.owner || user.github_login || '',
         config.githubMemoRepo.repo
       );
     }
-  }, []);
+  }, [user]);
 
   return (
     <AuthContext.Provider value={{ user, token, setToken, setUser, login, logout, updateUser }}>
